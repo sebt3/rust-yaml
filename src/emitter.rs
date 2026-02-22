@@ -41,6 +41,8 @@ pub struct BasicEmitter {
     indent_style: IndentStyle,
     yaml_version: Option<(u8, u8)>,
     tag_directives: Vec<(String, String)>,
+    /// Whether to automatically detect shared values and emit anchors/aliases
+    emit_anchors: bool,
 }
 
 #[allow(dead_code)]
@@ -55,6 +57,7 @@ impl BasicEmitter {
             indent_style: IndentStyle::default(),
             yaml_version: None,
             tag_directives: Vec::new(),
+            emit_anchors: true,
         }
     }
 
@@ -68,6 +71,7 @@ impl BasicEmitter {
             indent_style: IndentStyle::Spaces(indent),
             yaml_version: None,
             tag_directives: Vec::new(),
+            emit_anchors: true,
         }
     }
 
@@ -85,7 +89,13 @@ impl BasicEmitter {
             indent_style,
             yaml_version: None,
             tag_directives: Vec::new(),
+            emit_anchors: true,
         }
+    }
+
+    /// Enable or disable automatic anchor/alias emission for shared values
+    pub fn set_emit_anchors(&mut self, enabled: bool) {
+        self.emit_anchors = enabled;
     }
 
     /// Set the YAML version directive
@@ -438,6 +448,12 @@ impl BasicEmitter {
             write!(writer, "- ")?;
 
             match item {
+                Value::Sequence(seq) if seq.is_empty() => {
+                    write!(writer, "[]")?;
+                }
+                Value::Mapping(map) if map.is_empty() => {
+                    write!(writer, "{{}}")?;
+                }
                 Value::Sequence(_) | Value::Mapping(_) => {
                     writeln!(writer)?; // Add newline before nested structure
                     self.current_indent += self.indent;
@@ -497,6 +513,12 @@ impl BasicEmitter {
             write!(writer, ": ")?;
 
             match value {
+                Value::Sequence(seq) if seq.is_empty() => {
+                    write!(writer, "[]")?;
+                }
+                Value::Mapping(map) if map.is_empty() => {
+                    write!(writer, "{{}}")?;
+                }
                 Value::Sequence(_) | Value::Mapping(_) => {
                     writeln!(writer)?; // Add newline before nested structure
                     self.current_indent += self.indent;
@@ -561,6 +583,12 @@ impl BasicEmitter {
             write!(writer, ": ")?;
 
             match value {
+                Value::Sequence(seq) if seq.is_empty() => {
+                    write!(writer, "[]")?;
+                }
+                Value::Mapping(map) if map.is_empty() => {
+                    write!(writer, "{{}}")?;
+                }
                 Value::Sequence(_) | Value::Mapping(_) => {
                     writeln!(writer)?; // Add newline before nested structure
                     self.current_indent += self.indent;
@@ -771,8 +799,10 @@ impl Emitter for BasicEmitter {
         // Emit directives if any
         self.emit_directives(&mut writer)?;
 
-        // Analyze for shared values first
-        self.analyze_shared_values(value);
+        // Analyze for shared values only if anchors are enabled
+        if self.emit_anchors {
+            self.analyze_shared_values(value);
+        }
 
         // For top-level sequences, add a leading newline for proper formatting
         if matches!(value, Value::Sequence(_)) {
@@ -794,8 +824,10 @@ impl Emitter for BasicEmitter {
         // Emit directives if any
         self.emit_directives(&mut writer)?;
 
-        // Analyze for shared values first
-        self.analyze_shared_values(&value.value);
+        // Analyze for shared values only if anchors are enabled
+        if self.emit_anchors {
+            self.analyze_shared_values(&value.value);
+        }
 
         // Emit the commented value
         self.emit_commented_value(value, &mut writer)?;
@@ -821,8 +853,10 @@ impl Emitter for BasicEmitter {
         // Emit directives if any
         self.emit_directives(&mut writer)?;
 
-        // Analyze for shared values first
-        self.analyze_shared_values(&value.value);
+        // Analyze for shared values only if anchors are enabled
+        if self.emit_anchors {
+            self.analyze_shared_values(&value.value);
+        }
 
         // Emit the commented value with the specified style
         let result = self.emit_commented_value(value, &mut writer);

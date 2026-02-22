@@ -369,19 +369,14 @@ mixed_array:
                 panic!("Expected nested sequence");
             }
 
-            // Check nested sequence containing a mapping (this is correct YAML behavior)
-            if let Value::Sequence(ref nested_seq) = seq[5] {
-                assert_eq!(nested_seq.len(), 1);
-                if let Value::Mapping(ref nested_map) = nested_seq[0] {
-                    assert_eq!(
-                        nested_map.get(&Value::String("key".to_string())),
-                        Some(&Value::String("nested_value".to_string()))
-                    );
-                } else {
-                    panic!("Expected mapping inside nested sequence");
-                }
+            // Check mapping as a sequence item (- key: value creates a mapping entry)
+            if let Value::Mapping(ref nested_map) = seq[5] {
+                assert_eq!(
+                    nested_map.get(&Value::String("key".to_string())),
+                    Some(&Value::String("nested_value".to_string()))
+                );
             } else {
-                panic!("Expected nested sequence containing mapping");
+                panic!("Expected mapping as sequence item, got: {:?}", seq[5]);
             }
         } else {
             panic!("Expected sequence");
