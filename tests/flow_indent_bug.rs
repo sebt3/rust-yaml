@@ -9,6 +9,12 @@ use rust_yaml::{Value, Yaml, YamlConfig};
 ///
 /// Bug 3 (emitter): Added emit_anchors option to allow disabling
 ///   automatic anchor/alias generation for shared values.
+///
+/// Bug 4 (scanner): Plain scalars mixing digits and letters (500m, 128Mi)
+///   are split into separate tokens instead of being a single String.
+///
+/// Bug 5 (scanner): Block sequence items at the same indentation level
+///   are nested inside each other instead of being siblings.
 
 #[test]
 fn test_flow_seq_then_block_mapping_same_level() {
@@ -420,4 +426,126 @@ fn test_no_anchors_without_shared_values() {
         "Should not have anchors when no shared values, got:\n{}",
         output
     );
+}
+
+// --- Bug 4: Plain scalars with mixed digits and letters ---
+
+#[test]
+fn test_plain_scalar_with_suffix() {
+    let yaml = Yaml::new();
+    let input = "cpu: 500m\nmemory: 512Mi\n";
+    let parsed = yaml.load_str(input).unwrap();
+
+    if let Value::Mapping(ref map) = parsed {
+        assert_eq!(
+            map.get(&Value::String("cpu".to_string())),
+            Some(&Value::String("500m".to_string())),
+            "cpu should be String('500m'), got: {:?}",
+            map.get(&Value::String("cpu".to_string()))
+        );
+        assert_eq!(
+            map.get(&Value::String("memory".to_string())),
+            Some(&Value::String("512Mi".to_string())),
+            "memory should be String('512Mi'), got: {:?}",
+            map.get(&Value::String("memory".to_string()))
+        );
+        assert_eq!(map.len(), 2, "Should have exactly 2 keys, got: {:?}", map);
+    } else {
+        panic!("Expected a mapping, got: {:?}", parsed);
+    }
+}
+
+#[test]
+fn test_kubernetes_resources() {
+    let yaml = Yaml::new();
+    let input = r#"
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+"#;
+    let parsed = yaml.load_str(input).unwrap();
+
+    if let Value::Mapping(ref root) = parsed {
+        let resources = root.get(&Value::String("resources".to_string())).unwrap();
+        if let Value::Mapping(ref res) = resources {
+            let requests = res.get(&Value::String("requests".to_string())).unwrap();
+            if let Value::Mapping(ref req) = requests {
+                assert_eq!(
+                    req.get(&Value::String("cpu".to_string())),
+                    Some(&Value::String("100m".to_string())),
+                );
+                assert_eq!(
+                    req.get(&Value::String("memory".to_string())),
+                    Some(&Value::String("128Mi".to_string())),
+                );
+            } else {
+                panic!("requests should be a mapping");
+            }
+        } else {
+            panic!("resources should be a mapping");
+        }
+    } else {
+        panic!("Expected a mapping");
+    }
+}
+
+// --- Bug 5: Block sequence siblings nested instead of being siblings ---
+
+#[test]
+fn test_block_sequence_siblings() {
+    let yaml = Yaml::new();
+    let input = r#"
+requirements:
+  - custom_resource_definition: some.crd.io
+  - system_service: monitoring
+  - tenant_service: auth
+"#;
+    let parsed = yaml.load_str(input).unwrap();
+
+    if let Value::Mapping(ref root) = parsed {
+        let req = root
+            .get(&Value::String("requirements".to_string()))
+            .unwrap();
+        if let Value::Sequence(ref seq) = req {
+            assert_eq!(
+                seq.len(),
+                3,
+                "Should have 3 sequence items, got {}: {:?}",
+                seq.len(),
+                seq
+            );
+        } else {
+            panic!("requirements should be a sequence, got: {:?}", req);
+        }
+    } else {
+        panic!("Expected a mapping, got: {:?}", parsed);
+    }
+}
+
+#[test]
+fn test_simple_block_sequence() {
+    let yaml = Yaml::new();
+    let input = "items:\n  - a: 1\n  - b: 2\n  - c: 3\n";
+    let parsed = yaml.load_str(input).unwrap();
+
+    if let Value::Mapping(ref root) = parsed {
+        let items = root.get(&Value::String("items".to_string())).unwrap();
+        if let Value::Sequence(ref seq) = items {
+            assert_eq!(
+                seq.len(),
+                3,
+                "Should have 3 items, got {}: {:?}",
+                seq.len(),
+                seq
+            );
+        } else {
+            panic!("items should be a sequence, got: {:?}", items);
+        }
+    } else {
+        panic!("Expected a mapping, got: {:?}", parsed);
+    }
 }

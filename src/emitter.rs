@@ -353,14 +353,15 @@ impl BasicEmitter {
         }
 
         // String needs quoting if it could be interpreted as another type
-        if s == "null"
-            || s == "~"
-            || s == "true"
-            || s == "false"
-            || s == "yes"
-            || s == "no"
-            || s == "on"
-            || s == "off"
+        let lower = s.to_ascii_lowercase();
+        if lower == "null"
+            || lower == "~"
+            || lower == "true"
+            || lower == "false"
+            || lower == "yes"
+            || lower == "no"
+            || lower == "on"
+            || lower == "off"
             || s.parse::<i64>().is_ok()
             || s.parse::<f64>().is_ok()
         {

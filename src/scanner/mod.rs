@@ -1224,6 +1224,15 @@ impl BasicScanner {
                         self.tokens
                             .push(Token::simple(TokenType::BlockSequenceStart, self.position));
                         // Continue processing - the next iteration will handle the nested dash
+                    } else if self.current_char.is_some()
+                        && !matches!(self.current_char, Some('\n' | '\r'))
+                    {
+                        // Content follows "- " on the same line.
+                        // Update current_indent to the content's column position so that
+                        // any mapping started here will be at a deeper indent level than
+                        // the sequence. This ensures handle_indentation properly closes
+                        // the mapping when the next sibling "- " appears.
+                        self.current_indent = self.position.column - 1;
                     }
                 }
 
@@ -1258,8 +1267,10 @@ impl BasicScanner {
                 }
 
                 // Numbers or plain scalars starting with -
-                _ if ch.is_ascii_digit()
-                    || (ch == '-' && self.peek_char(1).map_or(false, |c| c.is_ascii_digit())) =>
+                // Only scan as number if the entire token is numeric (no trailing letters)
+                _ if (ch.is_ascii_digit()
+                    || (ch == '-' && self.peek_char(1).map_or(false, |c| c.is_ascii_digit())))
+                    && self.is_pure_number() =>
                 {
                     let token = self.scan_number()?;
                     self.tokens.push(token);
@@ -1444,6 +1455,38 @@ impl BasicScanner {
     }
 
     /// Peek at a character at the given offset (can be negative)
+    /// Check if the current position starts a pure number (digits/dots/minus only,
+    /// not followed by letters). Values like 500m, 128Mi should be treated as plain scalars.
+    fn is_pure_number(&self) -> bool {
+        let mut offset: isize = 0;
+        let first = self.peek_char(0);
+        // Skip leading minus
+        if first == Some('-') {
+            offset = 1;
+        }
+        // Scan digits and dots
+        let mut has_digit = false;
+        loop {
+            match self.peek_char(offset) {
+                Some(c) if c.is_ascii_digit() => {
+                    has_digit = true;
+                    offset += 1;
+                }
+                Some('.') => {
+                    offset += 1;
+                }
+                Some(c) if c.is_ascii_alphabetic() || c == '_' => {
+                    // Letters follow the digits — not a pure number (e.g. 500m, 128Mi)
+                    return false;
+                }
+                _ => {
+                    // Whitespace, newline, colon, EOF, etc. — end of token
+                    return has_digit;
+                }
+            }
+        }
+    }
+
     fn peek_char(&self, offset: isize) -> Option<char> {
         if offset >= 0 {
             let target_index = self.current_char_index + offset as usize;
