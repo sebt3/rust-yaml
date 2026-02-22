@@ -247,6 +247,97 @@ spec:
     assert_eq!(parsed, reparsed, "Round-trip should preserve structure");
 }
 
+// --- Emitter formatting tests: no trailing space, inline mapping in sequences ---
+
+#[test]
+fn test_no_trailing_space_after_colon() {
+    let yaml = Yaml::new();
+    let input = "parent:\n  child:\n    key: value\n";
+    let parsed = yaml.load_str(input).unwrap();
+    let output = yaml.dump_str(&parsed).unwrap();
+
+    // No line should end with ": " (trailing space)
+    for line in output.lines() {
+        assert!(
+            !line.ends_with(": "),
+            "Line should not end with trailing space after colon: {:?}",
+            line
+        );
+    }
+}
+
+#[test]
+fn test_mapping_inline_with_sequence_dash() {
+    let yaml = Yaml::new();
+    let input = r#"
+items:
+  - name: foo
+    value: bar
+  - name: baz
+    value: qux
+"#;
+    let parsed = yaml.load_str(input).unwrap();
+    let output = yaml.dump_str(&parsed).unwrap();
+
+    // Mapping entries should start on the same line as "- "
+    assert!(
+        output.contains("- name: foo"),
+        "First mapping key should be inline with '- ', got:\n{}",
+        output
+    );
+    assert!(
+        output.contains("- name: baz"),
+        "Second mapping key should be inline with '- ', got:\n{}",
+        output
+    );
+
+    // Round-trip correctness
+    let reparsed = yaml.load_str(&output).unwrap();
+    assert_eq!(parsed, reparsed, "Round-trip should preserve structure");
+}
+
+#[test]
+fn test_crd_like_structure() {
+    let yaml = Yaml::new();
+    let input = r#"
+versions:
+  - additionalPrinterColumns:
+      - description: Update schedule
+        name: schedule
+        type: string
+      - description: Last update date
+        name: last_updated
+        type: date
+"#;
+    let parsed = yaml.load_str(input).unwrap();
+    let output = yaml.dump_str(&parsed).unwrap();
+
+    // No trailing spaces on any line
+    for line in output.lines() {
+        assert!(
+            !line.ends_with(' '),
+            "Line should not end with trailing space: {:?}",
+            line
+        );
+    }
+
+    // Mappings should be inline with "- "
+    assert!(
+        output.contains("- additionalPrinterColumns:"),
+        "Should have '- additionalPrinterColumns:', got:\n{}",
+        output
+    );
+    assert!(
+        output.contains("- description: Update schedule"),
+        "Should have '- description: Update schedule', got:\n{}",
+        output
+    );
+
+    // Round-trip correctness
+    let reparsed = yaml.load_str(&output).unwrap();
+    assert_eq!(parsed, reparsed, "Round-trip should preserve structure");
+}
+
 // --- Anchor/alias emission option tests ---
 
 #[test]

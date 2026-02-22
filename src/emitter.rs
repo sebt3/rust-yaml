@@ -454,8 +454,14 @@ impl BasicEmitter {
                 Value::Mapping(map) if map.is_empty() => {
                     write!(writer, "{{}}")?;
                 }
-                Value::Sequence(_) | Value::Mapping(_) => {
-                    writeln!(writer)?; // Add newline before nested structure
+                Value::Mapping(map) => {
+                    // Emit mapping inline: first entry on same line as "- "
+                    self.current_indent += self.indent;
+                    self.emit_mapping_inner(map, writer, true)?;
+                    self.current_indent -= self.indent;
+                }
+                Value::Sequence(_) => {
+                    writeln!(writer)?;
                     self.current_indent += self.indent;
                     self.emit_value(item, writer)?;
                     self.current_indent -= self.indent;
@@ -510,22 +516,21 @@ impl BasicEmitter {
                 self.emit_scalar(key, writer)?;
             }
 
-            write!(writer, ": ")?;
-
             match value {
                 Value::Sequence(seq) if seq.is_empty() => {
-                    write!(writer, "[]")?;
+                    write!(writer, ": []")?;
                 }
                 Value::Mapping(map) if map.is_empty() => {
-                    write!(writer, "{{}}")?;
+                    write!(writer, ": {{}}")?;
                 }
                 Value::Sequence(_) | Value::Mapping(_) => {
-                    writeln!(writer)?; // Add newline before nested structure
+                    writeln!(writer, ":")?;
                     self.current_indent += self.indent;
                     self.emit_value(value, writer)?;
                     self.current_indent -= self.indent;
                 }
                 _ => {
+                    write!(writer, ": ")?;
                     self.emit_scalar(value, writer)?;
                 }
             }
@@ -540,6 +545,17 @@ impl BasicEmitter {
         map: &indexmap::IndexMap<Value, Value>,
         writer: &mut W,
     ) -> Result<()> {
+        self.emit_mapping_inner(map, writer, false)
+    }
+
+    /// Emit a mapping, optionally skipping indentation on the first entry
+    /// (used when the first entry follows "- " in a sequence)
+    fn emit_mapping_inner<W: Write>(
+        &mut self,
+        map: &indexmap::IndexMap<Value, Value>,
+        writer: &mut W,
+        skip_first_indent: bool,
+    ) -> Result<()> {
         if map.is_empty() {
             write!(writer, "{{}}")?;
             return Ok(());
@@ -550,9 +566,11 @@ impl BasicEmitter {
             if !first {
                 writeln!(writer)?;
             }
-            first = false;
 
-            self.write_indent(writer)?;
+            if !first || !skip_first_indent {
+                self.write_indent(writer)?;
+            }
+            first = false;
 
             // Handle both simple and complex keys
             let is_complex_key = matches!(key, Value::Sequence(_) | Value::Mapping(_));
@@ -562,11 +580,9 @@ impl BasicEmitter {
                 write!(writer, "? ")?;
                 match key {
                     Value::Mapping(map) => {
-                        // Emit mapping in flow style to avoid ambiguity
                         self.emit_mapping_flow_style(map, writer)?;
                     }
                     Value::Sequence(seq) => {
-                        // Emit sequence in flow style
                         self.emit_sequence_flow_style(seq, writer)?;
                     }
                     _ => {
@@ -580,22 +596,21 @@ impl BasicEmitter {
                 self.emit_scalar(key, writer)?;
             }
 
-            write!(writer, ": ")?;
-
             match value {
                 Value::Sequence(seq) if seq.is_empty() => {
-                    write!(writer, "[]")?;
+                    write!(writer, ": []")?;
                 }
                 Value::Mapping(map) if map.is_empty() => {
-                    write!(writer, "{{}}")?;
+                    write!(writer, ": {{}}")?;
                 }
                 Value::Sequence(_) | Value::Mapping(_) => {
-                    writeln!(writer)?; // Add newline before nested structure
+                    writeln!(writer, ":")?;
                     self.current_indent += self.indent;
                     self.emit_value(value, writer)?;
                     self.current_indent -= self.indent;
                 }
                 _ => {
+                    write!(writer, ": ")?;
                     self.emit_scalar(value, writer)?;
                 }
             }
