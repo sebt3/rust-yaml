@@ -316,6 +316,7 @@ impl Yaml {
         // Use the proper emitter implementation
         let mut emitter = BasicEmitter::with_indent(self.config.indent.indent);
         emitter.set_emit_anchors(self.config.emit_anchors);
+        emitter.set_sequence_indent(self.config.indent.sequence_indent);
         emitter.emit(value, writer)?;
         Ok(())
     }
@@ -335,6 +336,7 @@ impl Yaml {
         // Use the proper emitter implementation with comment support
         let mut emitter = BasicEmitter::with_indent(self.config.indent.indent);
         emitter.set_emit_anchors(self.config.emit_anchors);
+        emitter.set_sequence_indent(self.config.indent.sequence_indent);
         emitter.emit_commented_value_public(value, writer)?;
         Ok(())
     }

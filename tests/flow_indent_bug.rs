@@ -493,6 +493,54 @@ resources:
     }
 }
 
+// --- Sequence indentation option ---
+
+#[test]
+fn test_sequence_indent_zero() {
+    use rust_yaml::IndentConfig;
+
+    let config = YamlConfig {
+        indent: IndentConfig {
+            sequence_indent: Some(0),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let yaml = Yaml::with_config(config);
+
+    let input = "items:\n  - one\n  - two\n";
+    let parsed = yaml.load_str(input).unwrap();
+    let output = yaml.dump_str(&parsed).unwrap();
+
+    // With sequence_indent=0, items should be at the same level as the key
+    let expected = "items:\n- one\n- two\n";
+    assert_eq!(
+        output, expected,
+        "sequence_indent=0 should produce:\n{}\ngot:\n{}",
+        expected, output
+    );
+
+    // Round-trip: parsing the output back should give the same value
+    let reparsed = yaml.load_str(&output).unwrap();
+    assert_eq!(parsed, reparsed, "Round-trip should preserve structure");
+}
+
+#[test]
+fn test_sequence_indent_default() {
+    let yaml = Yaml::new();
+
+    let input = "items:\n  - one\n  - two\n";
+    let parsed = yaml.load_str(input).unwrap();
+    let output = yaml.dump_str(&parsed).unwrap();
+
+    // Default: sequences indented by 2
+    assert!(
+        output.contains("  - one"),
+        "Default should indent sequences, got:\n{}",
+        output
+    );
+}
+
 // --- Bug 5: Block sequence siblings nested instead of being siblings ---
 
 #[test]

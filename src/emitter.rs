@@ -43,6 +43,8 @@ pub struct BasicEmitter {
     tag_directives: Vec<(String, String)>,
     /// Whether to automatically detect shared values and emit anchors/aliases
     emit_anchors: bool,
+    /// Indentation for sequence items (None = same as indent)
+    sequence_indent: Option<usize>,
 }
 
 #[allow(dead_code)]
@@ -58,6 +60,7 @@ impl BasicEmitter {
             yaml_version: None,
             tag_directives: Vec::new(),
             emit_anchors: true,
+            sequence_indent: None,
         }
     }
 
@@ -72,6 +75,7 @@ impl BasicEmitter {
             yaml_version: None,
             tag_directives: Vec::new(),
             emit_anchors: true,
+            sequence_indent: None,
         }
     }
 
@@ -90,12 +94,23 @@ impl BasicEmitter {
             yaml_version: None,
             tag_directives: Vec::new(),
             emit_anchors: true,
+            sequence_indent: None,
         }
     }
 
     /// Enable or disable automatic anchor/alias emission for shared values
     pub fn set_emit_anchors(&mut self, enabled: bool) {
         self.emit_anchors = enabled;
+    }
+
+    /// Set the indentation for sequence items (None = same as base indent)
+    pub fn set_sequence_indent(&mut self, indent: Option<usize>) {
+        self.sequence_indent = indent;
+    }
+
+    /// Get the effective sequence indentation
+    fn effective_sequence_indent(&self) -> usize {
+        self.sequence_indent.unwrap_or(self.indent)
     }
 
     /// Set the YAML version directive
@@ -524,7 +539,14 @@ impl BasicEmitter {
                 Value::Mapping(map) if map.is_empty() => {
                     write!(writer, ": {{}}")?;
                 }
-                Value::Sequence(_) | Value::Mapping(_) => {
+                Value::Sequence(_) => {
+                    writeln!(writer, ":")?;
+                    let seq_indent = self.effective_sequence_indent();
+                    self.current_indent += seq_indent;
+                    self.emit_value(value, writer)?;
+                    self.current_indent -= seq_indent;
+                }
+                Value::Mapping(_) => {
                     writeln!(writer, ":")?;
                     self.current_indent += self.indent;
                     self.emit_value(value, writer)?;
@@ -604,7 +626,14 @@ impl BasicEmitter {
                 Value::Mapping(map) if map.is_empty() => {
                     write!(writer, ": {{}}")?;
                 }
-                Value::Sequence(_) | Value::Mapping(_) => {
+                Value::Sequence(_) => {
+                    writeln!(writer, ":")?;
+                    let seq_indent = self.effective_sequence_indent();
+                    self.current_indent += seq_indent;
+                    self.emit_value(value, writer)?;
+                    self.current_indent -= seq_indent;
+                }
+                Value::Mapping(_) => {
                     writeln!(writer, ":")?;
                     self.current_indent += self.indent;
                     self.emit_value(value, writer)?;
