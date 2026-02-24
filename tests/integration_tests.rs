@@ -385,3 +385,237 @@ mixed_array:
         panic!("Expected mapping");
     }
 }
+
+#[test]
+fn test_version_like_strings_not_parsed_as_float() {
+    let yaml = Yaml::new();
+
+    // Version strings like "0.5.8" must be parsed as strings, not floats.
+    // Regression: the scanner treated "0.5.8" as the number 0.5 leaving ".8"
+    // as a stray token, which corrupted the rest of the mapping.
+    let input = r#"
+metadata:
+  app_version: 0.5.8
+  category: core
+  description: A package
+"#;
+
+    let parsed = yaml.load_str(input).expect("Failed to parse YAML");
+
+    if let Value::Mapping(root) = &parsed {
+        let metadata = root
+            .get(&Value::String("metadata".to_string()))
+            .expect("missing 'metadata' key");
+        if let Value::Mapping(meta) = metadata {
+            // app_version must be a string "0.5.8", not a float 0.5
+            let app_version = meta
+                .get(&Value::String("app_version".to_string()))
+                .expect("missing 'app_version' key");
+            assert_eq!(
+                *app_version,
+                Value::String("0.5.8".to_string()),
+                "0.5.8 should be parsed as a string, got {:?}",
+                app_version
+            );
+
+            // category must still be correct (not shifted)
+            let category = meta
+                .get(&Value::String("category".to_string()))
+                .expect("missing 'category' key — mapping was corrupted");
+            assert_eq!(
+                *category,
+                Value::String("core".to_string()),
+            );
+
+            // description must still be correct
+            let description = meta
+                .get(&Value::String("description".to_string()))
+                .expect("missing 'description' key — mapping was corrupted");
+            assert_eq!(
+                *description,
+                Value::String("A package".to_string()),
+            );
+        } else {
+            panic!("Expected metadata to be a mapping");
+        }
+    } else {
+        panic!("Expected root to be a mapping");
+    }
+}
+
+#[test]
+fn test_version_string_round_trip() {
+    let yaml = Yaml::new();
+
+    let input = "version: 0.5.8\n";
+    let parsed = yaml.load_str(input).expect("Failed to parse");
+    let serialized = yaml.dump_str(&parsed).expect("Failed to serialize");
+    let reparsed = yaml.load_str(&serialized).expect("Failed to re-parse");
+    assert_eq!(parsed, reparsed, "Round-trip failed for version string");
+}
+
+/// Compact notation: the `-` of a block sequence sits at the same indent
+/// as the parent mapping keys. Keys that follow the sequence (without `-`)
+/// must be recognised as mapping siblings, NOT extra sequence items.
+#[test]
+fn test_compact_sequence_does_not_swallow_sibling_keys() {
+    let yaml = Yaml::new();
+
+    let input = r#"metadata:
+  features:
+  - upgrade
+  - auto_config
+  name: vynil
+  type: system
+"#;
+
+    let parsed = yaml.load_str(input).expect("Failed to parse YAML");
+
+    if let Value::Mapping(root) = &parsed {
+        let meta = root
+            .get(&Value::String("metadata".to_string()))
+            .expect("missing 'metadata'");
+        if let Value::Mapping(meta) = meta {
+            // features must be a 2-element sequence
+            let features = meta
+                .get(&Value::String("features".to_string()))
+                .expect("missing 'features'");
+            if let Value::Sequence(seq) = features {
+                assert_eq!(seq.len(), 2, "features should have 2 items, got {:?}", seq);
+                assert_eq!(seq[0], Value::String("upgrade".to_string()));
+                assert_eq!(seq[1], Value::String("auto_config".to_string()));
+            } else {
+                panic!("features should be a sequence, got {:?}", features);
+            }
+
+            // name and type must be sibling keys of metadata
+            assert_eq!(
+                meta.get(&Value::String("name".to_string())),
+                Some(&Value::String("vynil".to_string())),
+                "name should be a sibling key of metadata"
+            );
+            assert_eq!(
+                meta.get(&Value::String("type".to_string())),
+                Some(&Value::String("system".to_string())),
+                "type should be a sibling key of metadata"
+            );
+        } else {
+            panic!("metadata should be a mapping");
+        }
+    } else {
+        panic!("root should be a mapping");
+    }
+}
+
+/// Top-level keys after a mapping that contains a compact sequence must
+/// be parsed as top-level, not swallowed into the inner sequence.
+#[test]
+fn test_compact_sequence_does_not_swallow_top_level_keys() {
+    let yaml = Yaml::new();
+
+    let input = r#"metadata:
+  features:
+  - upgrade
+  name: vynil
+images:
+  agent:
+    registry: docker.io
+requirements: []
+"#;
+
+    let parsed = yaml.load_str(input).expect("Failed to parse YAML");
+
+    if let Value::Mapping(root) = &parsed {
+        assert!(
+            root.get(&Value::String("metadata".to_string())).is_some(),
+            "missing top-level 'metadata'"
+        );
+        assert!(
+            root.get(&Value::String("images".to_string())).is_some(),
+            "missing top-level 'images' — it was swallowed into the compact sequence"
+        );
+        assert!(
+            root.get(&Value::String("requirements".to_string())).is_some(),
+            "missing top-level 'requirements'"
+        );
+    } else {
+        panic!("root should be a mapping");
+    }
+}
+
+/// The full package.yaml round-trip: parse → serialize → re-parse must be
+/// structurally identical.
+#[test]
+fn test_package_yaml_round_trip() {
+    let yaml = Yaml::new();
+
+    let input = r#"apiVersion: vinyl.solidite.fr/v1beta1
+kind: Package
+metadata:
+  app_version: 0.5.8
+  category: core
+  description: Vynil controller to manage vynil packages installations
+  features:
+  - upgrade
+  - auto_config
+  name: vynil
+  type: system
+images:
+  agent:
+    registry: docker.io
+    repository: sebt3/vynil-agent
+  controller:
+    registry: docker.io
+    repository: sebt3/vynil-operator
+resources:
+  controller:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+requirements: []
+"#;
+
+    let parsed = yaml.load_str(input).expect("Failed to parse");
+    let serialized = yaml.dump_str(&parsed).expect("Failed to serialize");
+    let reparsed = yaml.load_str(&serialized).expect("Failed to re-parse");
+    assert_eq!(
+        parsed, reparsed,
+        "Round-trip mismatch.\nSerialized:\n{}",
+        serialized
+    );
+}
+
+/// Strings that happen to contain dots+digits (like domain names) or
+/// hyphens (like docker image names) should not be gratuitously quoted.
+#[test]
+fn test_no_unnecessary_quoting() {
+    let yaml = Yaml::new();
+
+    let input = r#"apiVersion: vinyl.solidite.fr/v1beta1
+repository: sebt3/vynil-agent
+name: my-app
+"#;
+
+    let parsed = yaml.load_str(input).expect("Failed to parse");
+    let serialized = yaml.dump_str(&parsed).expect("Failed to serialize");
+
+    // These strings should NOT be quoted in the output
+    assert!(
+        !serialized.contains("\"vinyl.solidite.fr/v1beta1\""),
+        "Domain-like string should not be quoted. Got:\n{}",
+        serialized
+    );
+    assert!(
+        !serialized.contains("\"sebt3/vynil-agent\""),
+        "Path-like string should not be quoted. Got:\n{}",
+        serialized
+    );
+    assert!(
+        !serialized.contains("\"my-app\""),
+        "Hyphenated string should not be quoted. Got:\n{}",
+        serialized
+    );
+}

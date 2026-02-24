@@ -383,30 +383,46 @@ impl BasicEmitter {
             return true;
         }
 
-        // Check for version-like strings that could be ambiguous
-        // e.g., "2.1.0", "1.2.3", etc. - these contain dots and could be misinterpreted
-        if s.chars().any(|c| c == '.') && s.chars().any(|c| c.is_ascii_digit()) {
-            // If it looks like a version number (contains dots and digits), quote it
-            // to prevent parsing ambiguity
+        // Starts or ends with whitespace
+        if s.starts_with(' ') || s.ends_with(' ') {
             return true;
         }
 
-        // Check for special characters
-        if s.contains('\n')
-            || s.contains('\r')
-            || s.contains('\t')
-            || s.contains('"')
-            || s.contains('\'')
-            || s.contains(':')
-            || s.contains('#')
-            || s.contains('-')
-            || s.contains('[')
-            || s.contains(']')
-            || s.contains('{')
-            || s.contains('}')
-            || s.starts_with(' ')
-            || s.ends_with(' ')
-        {
+        // Contains literal newlines or tabs
+        if s.contains('\n') || s.contains('\r') || s.contains('\t') {
+            return true;
+        }
+
+        // First character is a YAML indicator that would be consumed by the
+        // scanner before reaching plain-scalar scanning.
+        let first = s.as_bytes()[0];
+        if matches!(
+            first,
+            b'[' | b']'
+                | b'{' | b'}'
+                | b'"' | b'\''
+                | b'|' | b'>'
+                | b'!' | b'&'
+                | b'*' | b'?'
+                | b'%' | b','
+                | b'@' | b'`'
+                | b'#'
+        ) {
+            return true;
+        }
+
+        // `- ` or lone `-` at the start would be a block entry indicator
+        if first == b'-' && (s.len() == 1 || s.as_bytes()[1] == b' ') {
+            return true;
+        }
+
+        // `: ` anywhere, or trailing `:`, would be a key-value separator
+        if s.contains(": ") || s.ends_with(':') {
+            return true;
+        }
+
+        // ` #` would start an inline comment
+        if s.contains(" #") {
             return true;
         }
 
