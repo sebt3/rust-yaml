@@ -2007,23 +2007,30 @@ impl BasicScanner {
     /// Check if there's an active mapping at the specified indentation level
     /// This method properly handles BlockEnd tokens by tracking mapping start/end pairs
     fn check_active_mapping_at_level(&self, _target_indent: usize) -> bool {
-        let mut mapping_depth = 0;
-        let _current_mapping_indent: Option<usize> = None;
+        let mut depth = 0;
 
-        // Walk backwards through tokens to find mapping context
+        // Walk backwards through tokens to find the innermost unmatched block start.
+        // Every BlockEnd increments depth; BlockMappingStart and BlockSequenceStart
+        // decrement it (both open blocks that need a matching BlockEnd).
+        // When depth == 0 we have found the block start that is still "open".
         for token in self.tokens.iter().rev() {
             match &token.token_type {
                 TokenType::BlockMappingStart => {
-                    if mapping_depth == 0 {
-                        // This is the most recent unmatched mapping start
-                        // Check if it's at our target indentation level
-                        // We approximate the indentation based on the indent stack when this token was created
-                        return true; // Simplified: assume we found an active mapping
+                    if depth == 0 {
+                        // The innermost open block is a mapping — active at this level.
+                        return true;
                     }
-                    mapping_depth -= 1;
+                    depth -= 1;
+                }
+                TokenType::BlockSequenceStart => {
+                    if depth == 0 {
+                        // The innermost open block is a sequence, not a mapping.
+                        return false;
+                    }
+                    depth -= 1;
                 }
                 TokenType::BlockEnd => {
-                    mapping_depth += 1;
+                    depth += 1;
                 }
                 TokenType::StreamStart | TokenType::DocumentStart | TokenType::DocumentEnd => {
                     // Stop at document boundaries
